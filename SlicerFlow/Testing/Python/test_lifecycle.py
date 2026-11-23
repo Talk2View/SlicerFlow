@@ -218,6 +218,7 @@ class LifecycleTest(unittest.TestCase):
         traced = [r.getMessage() for r in records if r.exc_info]
         self.assertEqual(traced, [], "a normal Stop chat printed a stack trace")
 
+    @unittest.skipIf(sys.platform == "win32", "Windows ignores a folder's read-only mode")
     def test_a_lock_file_it_cannot_create_says_that_instead(self):
         directory = os.path.join(tempfile.mkdtemp(), "read-only")
         lock = lifecycle.ChatLock(os.path.join(directory, "chat.lock"))  # makes the directory

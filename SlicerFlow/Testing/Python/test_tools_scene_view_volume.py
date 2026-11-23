@@ -2,6 +2,7 @@
 
 import json
 import os
+import pathlib
 import tempfile
 
 import sf_testing  # noqa: F401  (isolates SLICERFLOW_HOME first)
@@ -50,7 +51,7 @@ class SceneToolsTest(SceneTestCase):
         cached_name = "sf-local-{}.nrrd".format(os.getpid())
         SampleData.SampleDataLogic.registerCustomSampleDataSource(
             category=LOCAL_SAMPLE_CATEGORY, sampleName="SFLocal",
-            uris="file://" + source_file, fileNames=cached_name, nodeNames="SFLocal")
+            uris=pathlib.Path(source_file).as_uri(), fileNames=cached_name, nodeNames="SFLocal")
         cache = slicer.mrmlScene.GetCacheManager().GetRemoteCacheDirectory()
         self.addCleanup(slicer.modules.sampleDataSources.pop, LOCAL_SAMPLE_CATEGORY, None)
         self.addCleanup(lambda: os.path.exists(os.path.join(cache, cached_name))
