@@ -36,26 +36,3 @@ class ModuleLoadsTest(unittest.TestCase):
         home = os.environ["SLICERFLOW_HOME"]
         settings_dir = os.path.dirname(slicer.app.slicerUserSettingsFilePath)
         self.assertFalse(home.startswith(settings_dir), home)
-
-    def test_the_talk2slicer_settings_migrate_through_a_real_qsettings(self):
-        import tempfile
-
-        import qt
-        from SlicerFlowLib import config
-
-        path = os.path.join(tempfile.mkdtemp(prefix="sf-settings-"), "settings.ini")
-        settings = qt.QSettings(path, qt.QSettings.IniFormat)
-        settings.setValue("Talk2Slicer/PartnerKey", "pk_old")
-        settings.setValue("Talk2Slicer/ChatPanelShown", False)
-        settings.setValue(config.SETTINGS_URL, "https://new.example.com")
-        settings.setValue("Talk2Slicer/EngineUrl", "https://old.example.com")
-        self.assertEqual(
-            sorted(config.migrate_settings(settings)),
-            sorted([config.SETTINGS_KEY, config.SETTINGS_PANEL_SHOWN]))
-        self.assertEqual(settings.value(config.SETTINGS_KEY), "pk_old")
-        self.assertFalse(config.setting_is_true(settings.value(config.SETTINGS_PANEL_SHOWN), True))
-        self.assertEqual(settings.value(config.SETTINGS_URL), "https://new.example.com")
-        self.assertEqual(settings.value("Talk2Slicer/PartnerKey"), "pk_old")
-        settings.remove(config.SETTINGS_KEY)
-        self.assertEqual(config.migrate_settings(settings), [])
-        self.assertFalse(settings.contains(config.SETTINGS_KEY))

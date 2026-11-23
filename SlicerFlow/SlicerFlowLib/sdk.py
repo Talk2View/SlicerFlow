@@ -2,7 +2,7 @@
 
 The module installs the SDK release it is tested against from PyPI (``REQUIREMENT``, one
 exact version). ``needs_install()`` is True when the SDK is missing or another version is
-installed, such as the wheel an earlier extension shipped. An editable checkout of the SDK
+installed. An editable checkout of the SDK
 is left alone, whatever its version, so a developer can run the module on SDK changes.
 
 Only ``install()`` needs Slicer; the rest runs in any Python.

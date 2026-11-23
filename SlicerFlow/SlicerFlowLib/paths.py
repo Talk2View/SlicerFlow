@@ -11,18 +11,18 @@
     metrics.jsonl  one line of timings per chat message (``perf``), and metrics.jsonl.1
 
 One directory per user account, shared by every 3D Slicer version and process that user
-runs. ``SLICERFLOW_HOME`` (or the older ``TALK2SLICER_HOME``) replaces it (the test runner
+runs. ``SLICERFLOW_HOME`` replaces it (the test runner
 points it at a temporary directory). This module imports ``slicer`` only when it has to, so
 it runs without Slicer.
 """
 
 import os
 
-from .config import ENV_HOME, getenv
+from .config import ENV_HOME
 
 
 def home():
-    override = getenv(os.environ, ENV_HOME)
+    override = os.environ.get(ENV_HOME)
     if override:
         return os.path.abspath(os.path.expanduser(override))
     import slicer

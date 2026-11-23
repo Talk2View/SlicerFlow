@@ -9,8 +9,6 @@ showing the chat URL (``show``), opening links, setting the clipboard, the look
 ``data_storage()`` is not part of ``HostAdapter`` -- ``UIServer`` never reads it -- it is
 this class's own second file, next to ``storage()``'s: ``Runtime`` gives it to
 ``Talk2View(data_storage=...)`` so the chat list is kept separately from the sign-in.
-``storage_migration.migrate_once`` runs here, once per start, moving what an earlier
-install already saved under the old, shared file across before anything reads either one.
 
 The queue is measured as it runs (``pump``, a ``perf.PumpMonitor``): how long each posted
 callable waited, and every tick of that timer that came more than ``perf.STALL_MS`` late,
@@ -23,7 +21,7 @@ import slicer
 from talk2view import FileStorage, TimerPumpDispatcher
 from talk2view.ui import Theme
 
-from . import paths, perf, storage_migration
+from . import paths, perf
 
 #: How often the main thread runs what other threads posted (every 20 ms).
 DRAIN_MS = 20
@@ -52,9 +50,6 @@ class SlicerHost:
         # Separate from the sign-in file, so a reply (written ~500 ms after it settles)
         # does not rewrite the token file, which is also rewritten on every refresh.
         self._data_storage = FileStorage(paths.conversations_file())
-        # Before Talk2View ever reads either file: an install from before data_storage
-        # had a file of its own still has its skills and preferences in the sign-in file.
-        storage_migration.migrate_once(self._storage, self._data_storage)
 
     def _start_timer(self, callback, interval_ms):
         self._drain = callback

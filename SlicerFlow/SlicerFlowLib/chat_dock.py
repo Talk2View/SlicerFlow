@@ -90,8 +90,7 @@ def remove():
 
 def saved_connection():
     """The partner key and engine from the environment or the extension's own file
-    (``config.resolve``). There is no panel UI for either any more, so a saved override
-    (an older build's Advanced section) is never read."""
+    (``config.resolve``)."""
     return config.resolve(os.environ, config.load_bundled(PARTNER_FILE))
 
 

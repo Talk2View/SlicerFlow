@@ -18,19 +18,6 @@ def test_a_relative_or_tilde_home_is_made_absolute(monkeypatch):
     assert not paths.home().startswith("~")
 
 
-def test_the_legacy_home_is_read_when_the_new_one_is_unset(monkeypatch, tmp_path):
-    monkeypatch.delenv("SLICERFLOW_HOME", raising=False)
-    monkeypatch.setenv("TALK2SLICER_HOME", str(tmp_path / "old"))
-    assert paths.ENV_HOME == "SLICERFLOW_HOME"
-    assert paths.home() == str(tmp_path / "old")
-
-
-def test_the_new_home_wins_when_both_are_set(monkeypatch, tmp_path):
-    monkeypatch.setenv("SLICERFLOW_HOME", str(tmp_path / "new"))
-    monkeypatch.setenv("TALK2SLICER_HOME", str(tmp_path / "old"))
-    assert paths.home() == str(tmp_path / "new")
-
-
 def test_the_users_tools_live_under_slicerflow_home(monkeypatch, tmp_path):
     monkeypatch.setenv("SLICERFLOW_HOME", str(tmp_path / "home"))
     assert paths.user_tools_dir() == str(tmp_path / "home" / "tools")

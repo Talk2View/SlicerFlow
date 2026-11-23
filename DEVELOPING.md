@@ -26,6 +26,41 @@ how its parts fit together. For what SlicerFlow does, see [README.md](README.md)
 `SlicerFlowLib` too; the reloaded module builds the panel again, with the chat stopped
 (press **Start chat** in it).
 
+## Settings and files
+
+- **Partner key.** The extension ships its Talk2View partner key in
+  `SlicerFlow/Resources/partner.json`. A partner key names the app to Talk2View; it is not
+  a password (every request also needs the user's own sign-in), so it ships with the
+  extension and nobody has to type one. It is SlicerFlow's own partner, "3D Slicer", in
+  the Talk2View dashboard, whose guest limits cover only SlicerFlow users. Treat the file
+  as public: never put anything secret in it.
+- **Another partner key or engine:** set `T2V_PARTNER_KEY` / `T2V_BASE_URL` before starting
+  Slicer; the environment wins over `partner.json`. The engine URL must be `https://`
+  (plain `http://` only for `127.0.0.1` or `localhost`).
+- **Files** are in `<Slicer settings folder>/Talk2View/` (`SLICERFLOW_HOME` replaces it):
+  the sign-in (`auth.json`), the chat list (`conversations.json`), `chat.lock`, the user's
+  `skills/` and `tools/` (with `tools.json`), and `metrics.jsonl`, one line of timings per
+  message (no message text, tool arguments or results; it rotates at 1 MB and never
+  leaves the computer).
+- **The chat lock.** Starting a chat takes `chat.lock`: the Talk2View server rotates the
+  refresh token on every renewal, so two Slicer processes sharing one sign-in would sign
+  each other out. A lock held by a running chat on this computer is never removed. A lock
+  that names another computer sharing this home directory (a roaming or network profile)
+  gets a **Remove the lock and start** button, which is refused if that chat is still
+  live.
+- **Starting by itself.** The chat never starts by itself before the user's first
+  **Start chat** (`SlicerFlow/ChatConsented` in Slicer's settings), in Slicer's `--testing`
+  mode, in a scripted or windowless run (`--python-script`, `--python-code`,
+  `--exit-after-startup`, `--no-main-window`), or when `SLICERFLOW_NO_AUTOSTART` is set to
+  anything but `0`. Starting by itself never runs pip: a missing SDK or `sounddevice` waits
+  for the user's **Start chat**.
+- **Microphone.** Dictation records in Slicer's Python with `sounddevice`, installed on
+  **Start chat** where the mic can work. On macOS the official Slicer.app has no
+  `NSMicrophoneUsageDescription` in its `Info.plist`, so macOS cannot ask for permission
+  for it; SlicerFlow never touches the microphone there until a Slicer build declares the
+  key. `Testing/Python/test_audio_probe.py` opens it in a child process of Slicer's Python
+  and records what happened.
+
 ## Tests
 
 ```bash
@@ -54,7 +89,7 @@ and its chat page live in
 [github.com/Talk2View/talk2view-python](https://github.com/Talk2View/talk2view-python).
 
 Starting the chat installs that release when the SDK is missing or another version is
-installed (such as the wheel an earlier extension shipped); there is no button for it. To
+installed; there is no button for it. To
 move to a new release, change `SDK_VERSION` and the version in this section, then run both
 test suites.
 

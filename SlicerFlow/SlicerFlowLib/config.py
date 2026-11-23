@@ -12,9 +12,6 @@ order of precedence:
     2. Resources/partner.json (the extension's own)
     3. for the engine only: https://engine.talk2view.com
 
-The module panel has no UI for either value any more (there is nothing to see or clear),
-so the settings-saved override is no longer read; see ``SETTINGS_KEY`` / ``SETTINGS_URL``.
-
 Pure Python: it runs without Slicer.
 """
 
@@ -26,12 +23,6 @@ from urllib.parse import urlsplit
 DEFAULT_ENGINE_URL = "https://engine.talk2view.com"
 ENV_KEY = "T2V_PARTNER_KEY"
 ENV_URL = "T2V_BASE_URL"
-#: Kept only so ``migrate_settings`` still has somewhere to copy an upgrading user's
-#: Talk2Slicer values; the module panel has no field for either any more, and
-#: ``resolve()`` no longer reads them (the connection is the environment or
-#: Resources/partner.json only).
-SETTINGS_KEY = "SlicerFlow/PartnerKey"
-SETTINGS_URL = "SlicerFlow/EngineUrl"
 #: Whether the chat panel (the dock on the right of the main window) was last shown.
 SETTINGS_PANEL_SHOWN = "SlicerFlow/ChatPanelShown"
 #: Whether the user has started the chat once, after the panel said what it sends: until
@@ -41,22 +32,6 @@ SETTINGS_CONSENTED = "SlicerFlow/ChatConsented"
 ENV_NO_AUTOSTART = "SLICERFLOW_NO_AUTOSTART"
 #: Replaces the folder SlicerFlow keeps its files in (``paths.home``).
 ENV_HOME = "SLICERFLOW_HOME"
-
-#: The extension was called Talk2Slicer. Each new settings key, and the one it replaces:
-#: ``migrate_settings`` copies them across once, and leaves the old ones for an older build.
-LEGACY_SETTINGS = {
-    SETTINGS_KEY: "Talk2Slicer/PartnerKey",
-    SETTINGS_URL: "Talk2Slicer/EngineUrl",
-    SETTINGS_PANEL_SHOWN: "Talk2Slicer/ChatPanelShown",
-}
-#: Set once ``migrate_settings`` has run, so it never runs again: a value the user removes
-#: later (the panel's "Use defaults") must not come back from the old key.
-SETTINGS_MIGRATED = "SlicerFlow/LegacySettingsMigrated"
-#: Each environment variable, and the Talk2Slicer name still read when it is unset.
-LEGACY_ENV = {
-    ENV_HOME: "TALK2SLICER_HOME",
-    ENV_NO_AUTOSTART: "TALK2SLICER_NO_AUTOSTART",
-}
 
 NO_PARTNER_KEY = (
     "This copy of SlicerFlow has no partner key. Set T2V_PARTNER_KEY, or add it to "
@@ -166,40 +141,14 @@ def command_options(options):
     return {name: getattr(options, name, None) for name in SCRIPTED_RUN_OPTIONS}
 
 
-def migrate_settings(settings):
-    """Copy each Talk2Slicer setting (``LEGACY_SETTINGS``) that has no SlicerFlow value yet,
-    once. ``settings`` is a ``qt.QSettings`` (``contains``, ``value``, ``setValue``). A
-    SlicerFlow value is never overwritten, and the old keys are kept, so an older build
-    still finds them. Returns the new keys it wrote."""
-    if settings.contains(SETTINGS_MIGRATED):
-        return []
-    copied = []
-    for key, legacy in LEGACY_SETTINGS.items():
-        if settings.contains(legacy) and not settings.contains(key):
-            settings.setValue(key, settings.value(legacy))
-            copied.append(key)
-    settings.setValue(SETTINGS_MIGRATED, True)
-    return copied
-
-
-def getenv(environ, name, default=None):
-    """``environ[name]``, or its Talk2Slicer name's value (``LEGACY_ENV``) when ``name`` is
-    unset or empty; the new name wins when both are set."""
-    for candidate in (name, LEGACY_ENV.get(name)):
-        if candidate and environ.get(candidate):
-            return environ[candidate]
-    return default
-
-
 def autostart_allowed(testing, environ, options):
     """Whether the chat may start by itself when Slicer starts (or when its panel is first
     shown). ``options`` is ``command_options(...)``. Never in Slicer's ``--testing`` mode,
     so tests start it themselves; never in a scripted or windowless run
-    (``SCRIPTED_RUN_OPTIONS``); never with ``SLICERFLOW_NO_AUTOSTART`` (or the older
-    ``TALK2SLICER_NO_AUTOSTART``) set."""
+    (``SCRIPTED_RUN_OPTIONS``); never with ``SLICERFLOW_NO_AUTOSTART`` set."""
     if testing or any(options.get(name) for name in SCRIPTED_RUN_OPTIONS):
         return False
-    return (getenv(environ, ENV_NO_AUTOSTART) or "").strip() in ("", "0")
+    return (environ.get(ENV_NO_AUTOSTART) or "").strip() in ("", "0")
 
 
 def setting_is_true(value, default):

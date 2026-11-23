@@ -18,7 +18,6 @@ set(MODULE_PYTHON_SCRIPTS
   ${MODULE_NAME}Lib/runtime.py
   ${MODULE_NAME}Lib/sdk.py
   ${MODULE_NAME}Lib/skills.py
-  ${MODULE_NAME}Lib/storage_migration.py
   ${MODULE_NAME}Lib/tools_panel.py
   ${MODULE_NAME}Lib/user_tools.py
   ${MODULE_NAME}Lib/tools/__init__.py

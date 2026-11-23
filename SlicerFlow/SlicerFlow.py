@@ -65,11 +65,6 @@ class SlicerFlow(ScriptedLoadableModule):
             "Built by A2B Technology Corporation Pty Ltd (Talk2View) on the Talk2View Python SDK "
             "(MIT) and its localhost chat UI server."
         )
-        # Before anything reads the settings: the Talk2Slicer ones carry over, once.
-        try:
-            config.migrate_settings(qt.QSettings())
-        except Exception:  # never let the migration break Slicer's startup
-            logging.exception("SlicerFlow: could not migrate the Talk2Slicer settings")
         # Once per process: Slicer builds the module object once, and a Reload does not.
         slicer.app.connect("startupCompleted()", onStartupCompleted)
 
@@ -297,8 +292,7 @@ class SlicerFlowWidget(ScriptedLoadableModuleWidget):
     def connection(self):
         """The partner key and engine this panel would start the chat with: the
         environment (T2V_PARTNER_KEY / T2V_BASE_URL, for developers), else the bundled
-        Resources/partner.json. There is no panel UI for either any more, so a saved
-        override (an older build's Advanced section) is never read."""
+        Resources/partner.json."""
         return config.resolve(os.environ, config.load_bundled(PARTNER_FILE))
 
     # Performance: def onOpenLogFolder(self):
