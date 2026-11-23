@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.DS_Store
+# Test output (scripts/slicer-tests.sh, scripts/unit-tests.sh)
+build/
+.pytest_cache/

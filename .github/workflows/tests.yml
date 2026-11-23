@@ -1,0 +1,234 @@
+name: Tests
+
+# The unit tests (no Slicer), then the in-Slicer suite (SlicerFlow/Testing/Python) inside
+# official 3D Slicer builds on Linux and Windows: the download, the Windows install, Mesa
+# llvmpipe, Xvfb.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The pin: official 3D Slicer 5.12.4 = revision 34645 (Qt 5.15.2, Python 3.12.10). To
+  # move it, fetch https://download.slicer.org/find?os=linux&revision=<rev> (and os=win)
+  # and copy `download_url` and `sha512` into the matrix below.
+  SLICER_REVISION: "34645"
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: The CMake lists match the module's files
+        run: python3 scripts/check_cmake_lists.py
+      - name: Unit tests (with the pinned SDK from PyPI)
+        run: scripts/unit-tests.sh -v
+
+  slicer:
+    name: Slicer ${{ matrix.label }}
+    needs: unit
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux
+            os: ubuntu-22.04
+            archive: Slicer-5.12.4-linux-amd64.tar.gz
+            url: https://download.slicer.org/bitstream/6aa1beb7ce9de556d3010204
+            sha512: ac76c5061a8fff20d4e59732855f74360930fd4891450085bcbc6a8eb1a1f4ade9a1ca4fc633142661b714dbe8c4604306079f9546e52053faa5e6f99410cf76
+          - label: windows
+            os: windows-2022
+            archive: Slicer-5.12.4-win-amd64.exe
+            url: https://download.slicer.org/bitstream/6aa1db04ce9de556d30112bb
+            sha512: 5ba320cb67f0acdaacf0a31380e9cf3b9f46d05f57a53da7e04ebcd9490251ecbe998bfefdbdab1f747e038653177868cdb0ad30986473b9d68efba0f4c6045c
+    env:
+      ARCHIVE: ${{ matrix.archive }}
+      SLICER_URL: ${{ matrix.url }}
+      SLICER_SHA512: ${{ matrix.sha512 }}
+      SF_TEST_OUT: ${{ github.workspace }}/ci-out
+      # The watchdog (run_slicer_tests.py) fires first, then `timeout` / WaitForExit, then
+      # the step, then the job.
+      SF_TEST_TIMEOUT_S: "600"
+      # A hosted runner cannot give Chromium its sandbox. Our page, served from 127.0.0.1.
+      QTWEBENGINE_DISABLE_SANDBOX: "1"
+      QTWEBENGINE_CHROMIUM_FLAGS: "--disable-gpu"
+      PYTHONUTF8: "1"
+      # The chat never starts by itself in a test Slicer (--testing already sees to that).
+      SLICERFLOW_NO_AUTOSTART: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore the Slicer package
+        uses: actions/cache@v4
+        with:
+          path: .slicer-cache
+          key: slicer-${{ matrix.label }}-r${{ env.SLICER_REVISION }}-${{ matrix.sha512 }}
+
+      - name: Download and verify the Slicer package
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          mkdir -p .slicer-cache "$SF_TEST_OUT"
+          if [ ! -f ".slicer-cache/$ARCHIVE" ]; then
+            # --retry-all-errors: this host drops connections mid-file. No `-C -`: it answers
+            # every Range request with the whole file, so a resume fails.
+            curl -fL --connect-timeout 30 --retry 5 --retry-all-errors --retry-delay 10 \
+              -o ".slicer-cache/$ARCHIVE" "$SLICER_URL"
+          fi
+          echo "$SLICER_SHA512  .slicer-cache/$ARCHIVE" | sha512sum -c -
+
+      # ── Linux ──────────────────────────────────────────────────────────────
+      - name: Install the libraries Slicer needs (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libgl1-mesa-dri \
+            libglu1-mesa libpulse-mainloop-glib0 libnss3 libasound2 qt5dxcb-plugin libsm6 \
+            libgl1 libegl1 libopengl0 libfontconfig1 libdbus-1-3 \
+            libxcomposite1 libxcursor1 libxdamage1 libxrandr2 libxtst6 libxi6 \
+            libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-xinerama0 libxcb-xkb1 libxcb-shape0
+
+      - name: Unpack Slicer (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/slicer"
+          tar -xzf ".slicer-cache/$ARCHIVE" --strip-components=1 -C "$RUNNER_TEMP/slicer"
+          test -x "$RUNNER_TEMP/slicer/Slicer"
+
+      - name: Run the tests inside Slicer (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set -uo pipefail
+          # The default shell is `bash -e`: catch the exit code with `||`, or a failing
+          # Slicer would end this step before the code and the logs are saved.
+          code=0
+          timeout -k 15 780 \
+            xvfb-run -a -s "-screen 0 1280x1024x24" \
+            "$RUNNER_TEMP/slicer/Slicer" --testing --no-splash \
+            --additional-module-paths "$GITHUB_WORKSPACE/SlicerFlow" \
+            --python-script "$GITHUB_WORKSPACE/SlicerFlow/Testing/Python/run_slicer_tests.py" \
+            > "$SF_TEST_OUT/slicer-stdout.log" 2>&1 || code=$?
+          echo "$code" > "$SF_TEST_OUT/slicer-exit-code.txt"
+          echo "Slicer exited with $code"
+          tail -n 60 "$SF_TEST_OUT/slicer-stdout.log" || true
+          cp "${TMPDIR:-/tmp}/Slicer-${USER:-}"/*.log "$SF_TEST_OUT/" 2>/dev/null || true
+
+      # ── Windows ────────────────────────────────────────────────────────────
+      - name: Install Slicer silently (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Join-Path $env:GITHUB_WORKSPACE ".slicer-cache\$env:ARCHIVE"
+          # NSIS: /S = silent, /D=<dir> must be LAST and must not be quoted.
+          $p = Start-Process -FilePath $installer -ArgumentList '/S', '/D=C:\Slicer' -PassThru
+          $null = $p.Handle   # without this, ExitCode is empty after the process ends
+          if (-not $p.WaitForExit(15 * 60 * 1000)) { $p.Kill(); throw 'the installer did not finish in 15 minutes' }
+          if (-not (Test-Path 'C:\Slicer\Slicer.exe')) {
+            & 'C:\Program Files\7-Zip\7z.exe' x $installer '-oC:\Slicer' -y | Select-Object -Last 3
+          }
+          if (-not (Test-Path 'C:\Slicer\bin\SlicerApp-real.exe')) { throw 'Slicer is not installed in C:\Slicer' }
+          exit 0
+
+      - name: Put Mesa llvmpipe next to SlicerApp-real.exe (Windows has no GPU)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          MESA_VERSION: "26.2.0"
+          MESA_SHA256: dcb2719ef346dab5b609fcb193a5f13cfc4b0502e3f4de1ad43d349477402f47
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'mesa.7z'
+          curl.exe -fL --connect-timeout 30 --retry 5 --retry-all-errors --retry-delay 10 -o $archive "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_VERSION/mesa3d-$env:MESA_VERSION-release-msvc.7z"
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
+          if ($hash -ne $env:MESA_SHA256) { throw "Mesa archive hash mismatch: $hash" }
+          $dest = Join-Path $env:RUNNER_TEMP 'mesa'
+          & 'C:\Program Files\7-Zip\7z.exe' x $archive "-o$dest" 'x64\opengl32.dll' 'x64\libgallium_wgl.dll' -y | Select-Object -Last 3
+          # ONLY these two: the archive's libEGL.dll / libGLESv2.dll would overwrite Qt's ANGLE copies.
+          Copy-Item "$dest\x64\opengl32.dll", "$dest\x64\libgallium_wgl.dll" -Destination 'C:\Slicer\bin' -Force
+
+      - name: Run the tests inside Slicer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 15
+        env:
+          GALLIUM_DRIVER: llvmpipe
+          QT_OPENGL: desktop
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:SF_TEST_OUT | Out-Null
+          $modules = Join-Path $env:GITHUB_WORKSPACE 'SlicerFlow'
+          $script = Join-Path $env:GITHUB_WORKSPACE 'SlicerFlow\Testing\Python\run_slicer_tests.py'
+          try {
+            # Slicer.exe is a GUI-subsystem launcher: wait on its handle.
+            $p = Start-Process -FilePath 'C:\Slicer\Slicer.exe' -ArgumentList '--testing', '--no-splash', '--additional-module-paths', "`"$modules`"", '--python-script', "`"$script`"" -PassThru
+            $null = $p.Handle
+            if ($p.WaitForExit(780 * 1000)) { $code = $p.ExitCode } else { taskkill /F /T /PID $p.Id | Out-Null; $code = 124 }
+          } catch {
+            $code = 'start-failed'
+            $_ | Out-String | Set-Content -Path (Join-Path $env:SF_TEST_OUT 'start-error.txt')
+          }
+          Get-Process SlicerApp-real, QtWebEngineProcess -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Set-Content -Path (Join-Path $env:SF_TEST_OUT 'slicer-exit-code.txt') -Value $code
+          Write-Host "Slicer exited with $code"
+          Copy-Item (Join-Path $env:TEMP 'Slicer\*.log') -Destination $env:SF_TEST_OUT -ErrorAction SilentlyContinue
+          exit 0
+
+      # ── Both ───────────────────────────────────────────────────────────────
+      - name: Judge the run
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          py=python3; command -v python3 >/dev/null 2>&1 || py=python
+          code=$(tr -d '[:space:]' < "$SF_TEST_OUT/slicer-exit-code.txt" 2>/dev/null || echo missing)
+          {
+            echo "### Slicer ${{ matrix.label }}: exit code \`$code\`"
+            echo '```'
+            tail -n 40 "$SF_TEST_OUT/tests.log" 2>/dev/null || echo "no tests.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          "$py" - "$SF_TEST_OUT/result.json" "$code" <<'PY'
+          import json, sys
+          path, code = sys.argv[1], sys.argv[2]
+          try:
+              result = json.load(open(path))
+          except (OSError, ValueError) as exc:
+              sys.exit("no readable result.json ({}); Slicer exit code {}".format(exc, code))
+          print(json.dumps(result, indent=2))
+          if not result.get("ok") or code != "0":
+              sys.exit("FAILED: ok={} exit code {}".format(result.get("ok"), code))
+          PY
+
+      - name: Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slicer-tests-${{ matrix.label }}
+          path: ci-out
+          if-no-files-found: warn
+          retention-days: 14
